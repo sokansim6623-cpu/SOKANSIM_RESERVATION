@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>예약·결과 확인</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 24px; max-width: 720px; }
+    h1 { font-size: 22px; margin: 0 0 12px; }
+    .sub { color:#555; font-size:14px; line-height:1.6; margin-bottom:16px; }
+    .wrap { display: grid; gap: 18px; }
+    .card { border:1px solid #ddd; border-radius:12px; padding:14px; }
+    label { display:block; margin: 10px 0 6px; font-weight:700; }
+    input { width:100%; padding:10px; font-size:15px; box-sizing:border-box; }
+    button { margin-top:12px; padding:12px; font-size:15px; width:100%; cursor:pointer; }
+    .row { margin: 10px 0; }
+    .k { color:#666; font-size:13px; }
+    .v { font-size:16px; font-weight:800; }
+    .ok { color:#0a7; font-weight:700; }
+    .err { color:#b00020; font-weight:700; }
+    .hide { display:none; }
+    .small { color:#666; font-size:12px; margin-top:10px; }
+  </style>
+</head>
+<body>
+  <h1>예약·결과 확인</h1>
+  <div class="sub">
+    차트번호/이름/생년월일이 모두 일치할 때만 조회됩니다.<br/>
+    입력 정보가 다르면 내용이 표시되지 않습니다.
+  </div>
+
+  <div class="wrap">
+    <!-- 환자 조회 -->
+    <div class="card">
+      <div style="font-weight:800; margin-bottom:6px;">환자 조회</div>
+
+      <label>차트번호</label>
+      <input id="p_chart" placeholder="예: 00012345" />
+
+      <label>이름</label>
+      <input id="p_name" placeholder="예: 홍길동" />
+
+      <label>생년월일 8자리</label>
+      <input id="p_dob8" inputmode="numeric" maxlength="8" placeholder="예: 19850123" />
+
+      <button id="btn_check">조회하기</button>
+
+      <div id="p_msg" class="small"></div>
+      <div id="p_result" class="card hide" style="margin-top:12px;"></div>
+    </div>
+
+    <!-- 직원용 -->
+    <div class="card">
+      <div style="display:flex; justify-content:space-between; align-items:center;">
+        <div style="font-weight:800;">직원용</div>
+        <button id="btn_toggle" style="width:auto; padding:8px 10px; font-size:13px;">열기</button>
+      </div>
+
+      <div id="admin_panel" class="hide">
+        <label>관리자 비밀번호</label>
+        <input id="a_key" type="password" placeholder="예: 123" />
+
+        <label>차트번호</label>
+        <input id="a_chart" />
+
+        <label>이름</label>
+        <input id="a_name" />
+
+        <label>생년월일 8자리</label>
+        <input id="a_dob8" inputmode="numeric" maxlength="8" />
+
+        <label>검사명</label>
+        <input id="a_exam" />
+
+        <label>예약일시 (예: 2026-02-20 10:30)</label>
+        <input id="a_reserved" />
+
+        <label>이전검사결과</label>
+        <input id="a_prev" />
+
+        <label>내원안내</label>
+        <input id="a_guide" />
+
+        <button id="btn_save">저장</button>
+        <div id="a_msg" class="small"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ✅ 여기에 Apps Script 웹앱 URL을 넣으세요
+    const SCRIPT_URL = "Phttps://script.google.com/macros/s/AKfycbzIstFbzGuPlPXjttG5GMyLAp2HZ3oRWq7zMjDX0H8u2oCpF2qK7SBlfLOUJWFwi4Z3/exec";
+
+    const $ = (id) => document.getElementById(id);
+
+    $("btn_toggle").addEventListener("click", () => {
+      const p = $("admin_panel");
+      const open = p.classList.contains("hide");
+      p.classList.toggle("hide", !open);
+      $("btn_toggle").textContent = open ? "닫기" : "열기";
+    });
+
+    $("btn_check").addEventListener("click", async () => {
+      $("p_result").classList.add("hide");
+      $("p_msg").textContent = "";
+
+      const payload = {
+        action: "check",
+        chartNo: $("p_chart").value.trim(),
+        name: $("p_name").value.trim(),
+        dob8: $("p_dob8").value.trim()
+      };
+
+      const data = await postJson(payload);
+      if (!data.ok) {
+        $("p_msg").innerHTML = `<span class="err">${escapeHtml(data.message || "일치하는 예약 정보가 없습니다.")}</span>`;
+        return;
+      }
+
+      const v = data.data;
+      $("p_result").innerHTML = `
+        <div class="row"><div class="k">검사명</div><div class="v">${escapeHtml(v.exam_name)}</div></div>
+        <div class="row"><div class="k">예약일시</div><div class="v">${escapeHtml(v.reserved_at)}</div></div>
+        ${v.prev_result ? `<div class="row"><div class="k">이전검사결과</div><div class="v">${escapeHtml(v.prev_result)}</div></div>` : ``}
+        ${v.visit_guide ? `<div class="row"><div class="k">내원안내</div><div class="v">${escapeHtml(v.visit_guide)}</div></div>` : ``}
+        <div class="small">업데이트: ${escapeHtml(v.updated_at || "")}</div>
+      `;
+      $("p_result").classList.remove("hide");
+    });
+
+    $("btn_save").addEventListener("click", async () => {
+      $("a_msg").textContent = "";
+
+      const payload = {
+        action: "adminUpsert",
+        adminKey: $("a_key").value.trim(),
+        chart_no: $("a_chart").value.trim(),
+        name: $("a_name").value.trim(),
+        dob8: $("a_dob8").value.trim(),
+        exam_name: $("a_exam").value.trim(),
+        reserved_at: $("a_reserved").value.trim(),
+        prev_result: $("a_prev").value.trim(),
+        visit_guide: $("a_guide").value.trim()
+      };
+
+      const data = await postJson(payload);
+      if (!data.ok) {
+        $("a_msg").innerHTML = `<span class="err">${escapeHtml(data.message || "저장 실패")}</span>`;
+        return;
+      }
+      $("a_msg").innerHTML = `<span class="ok">저장 완료</span>`;
+    });
+
+    async function postJson(payload) {
+      try {
+        const r = await fetch(SCRIPT_URL, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+        return await r.json();
+      } catch (e) {
+        return { ok: false, message: "연결 실패" };
+      }
+    }
+
+    function escapeHtml(s) {
+      return String(s || "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
+    }
+  </script>
+</body>
+</html>
